@@ -69,6 +69,8 @@ app =
        -- Invoke sharpSAT to get an approximate solution count, time out at 60 seconds
        (exitCode, stdout, stderr) <- liftIO $ readProcessWithExitCode "sharpSAT" ["-q", "-t", "60", filename] ""
 
+       liftIO $ removeFile filename
+
        if exitCode == ExitSuccess
          then json $ ResponseSpec True [] (extractCount stdout) stdout stderr
          else json $ ResponseSpec False [] (-1) stdout stderr
@@ -85,6 +87,7 @@ app =
              Just argList -> argList
        (exitCode, stdout, stderr) <- liftIO $ readProcessWithExitCode "unigen" (args ++ [filename, outputFilename]) ""
 
+       liftIO $ removeFile filename
        -- Perusing the code, it appears that unigen uses an exit code of 0 to indicate error, while positive
        -- exit codes seem to indicate some form of success.
        -- https://bitbucket.org/kuldeepmeel/unigen/src/4677b2ec4553b2a44a31910db0037820abdc1394/ugen2/cmsat/Main.cpp?at=master&fileviewer=file-view-default#Main.cpp-831
@@ -92,6 +95,7 @@ app =
          then json $ ResponseSpec False [] (-1) stdout stderr
          else do
            solutionFileStr <- liftIO $ readSolutionFile outputFilename
+           liftIO $ removeFile outputFilename
            json $ ResponseSpec True (extractSolutions solutionFileStr) (-1) "" ""
 
      post ("experiments/generate/non-uniform" <//> var) $ \count -> do
