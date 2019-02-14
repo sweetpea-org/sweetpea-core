@@ -2,3 +2,6 @@ language: haskell
 dist: xenial
 ghc:
 - '8.4.2'
+
+notifications:
+  email: false
