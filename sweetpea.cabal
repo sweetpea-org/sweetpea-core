@@ -2,7 +2,7 @@ name:                sweetpea
 version:             0.1.0.0
 -- synopsis:
 -- description:
-homepage:            https://github.com/anniecherk/sweetpea-core#readme
+homepage:            https://github.com/sweetpea-org/sweetpea-core#readme
 license:             BSD3
 license-file:        LICENSE
 author:              Annie Cherkaev
@@ -17,7 +17,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     SweetPeaCore, DataStructures
                      , CodeGen, Testers, Parser, ServerHelpers
-  build-depends:       base >= 4.7 && < 5
+  build-depends:       base >= 4.11 && < 5
                      , tuple
                      , text
                      , bytestring
@@ -87,4 +87,4 @@ test-suite unitTests
 
 source-repository head
   type:     git
-  location: https://github.com/anniecherk/sweetpea-core
+  location: https://github.com/sweetpea-org/sweetpea-core
