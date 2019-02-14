@@ -58,23 +58,6 @@ app =
        let dimacsStr = processRequests spec
        text $ pack dimacsStr
 
-     -- Doesn't work yet, need to get a statically-linked binary built into the docker image.
-     post "experiments/count-solutions" $ do
-       spec <- jsonBody' :: ApiAction JSONSpec
-       guid <- liftIO $ toString <$> UUID.nextRandom
-       let filename = guid ++ ".cnf"
-       let outputFilename = guid ++ ".out"
-       liftIO $ saveCnf filename spec
-
-       -- Invoke sharpSAT to get an approximate solution count, time out at 60 seconds
-       (exitCode, stdout, stderr) <- liftIO $ readProcessWithExitCode "sharpSAT" ["-q", "-t", "60", filename] ""
-
-       liftIO $ removeFile filename
-
-       if exitCode == ExitSuccess
-         then json $ ResponseSpec True [] (extractCount stdout) stdout stderr
-         else json $ ResponseSpec False [] (-1) stdout stderr
-
      post "experiments/generate" $ do
        spec <- jsonBody' :: ApiAction JSONSpec
        guid <- liftIO $ toString <$> UUID.nextRandom
