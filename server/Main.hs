@@ -20,6 +20,8 @@ import System.Directory
 import System.Process
 import qualified System.IO.Strict as S
 
+import qualified Database.Redis as R
+
 import Parser
 import ServerHelpers
 
@@ -34,13 +36,15 @@ data ResponseSpec = ResponseSpec { ok :: Bool
                                  , stderr :: String
                                  } deriving (Generic, Eq, Show, ToJSON, FromJSON)
 
+data ServerState = RedisAppState (R.Connection)
 
-type Api = SpockM () () () ()
-type ApiAction a = SpockAction () () () a
+type Api = SpockM () () ServerState ()
+type ApiAction a = SpockAction () () ServerState a
 
-serverCfg :: IO (SpockCfg () () ())
+serverCfg :: IO (SpockCfg () () ServerState)
 serverCfg = do
-    spockConfig <- defaultSpockCfg () PCNoDatabase ()
+    redisConn <- R.checkedConnect R.defaultConnectInfo
+    spockConfig <- defaultSpockCfg () PCNoDatabase (RedisAppState redisConn)
     return spockConfig { spc_maxRequestSize = Nothing } -- Disable the request size limit
 
 main :: IO ()
