@@ -11,7 +11,7 @@
 # Then hit the API on localhost:8080
 
 # UNIGEN
-FROM debian:jessie-slim as unigen-builder
+FROM debian:jessie-slim as dependency-builder
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     apt-get install --yes build-essential \
@@ -40,11 +40,18 @@ RUN wget http://www.cmake.org/files/v3.5/cmake-3.5.2.tar.gz && \
     make && \
     make install
 
+# CRYPTOMINISAT5 (For non-uniform 'sampling')
 RUN wget https://github.com/msoos/cryptominisat/archive/5.6.5.tar.gz && \
     tar xzf 5.6.5.tar.gz && \
     cd cryptominisat-5.6.5 && \
     mkdir build && cd build && \
     cmake -DSTATICCOMPILE=ON -DCMAKE_BUILD_TYPE=Release .. && \
+    make
+
+# REDIS SERVER (For dealing with state in async requests)
+RUN wget http://download.redis.io/releases/redis-5.0.3.tar.gz && \
+    tar xzf redis-5.0.3.tar.gz && \
+    cd redis-5.0.3 && \
     make
 
 # SERVER
@@ -59,10 +66,13 @@ RUN git clone https://github.com/anniecherk/sweetpea-core && \
 # https://futtetennismo.me/posts/docker/2017-11-24-docker-haskell-executables.html
 FROM fpco/haskell-scratch:integer-gmp
 
-COPY --from=unigen-builder /unigen/ugen2/build/unigen /bin/
-COPY --from=unigen-builder /cryptominisat-5.6.5/build/cryptominisat5 /bin/
+COPY --from=dependency-builder /unigen/ugen2/build/unigen /bin/
+COPY --from=dependency-builder /cryptominisat-5.6.5/build/cryptominisat5 /bin/
+COPY --from=dependency-builder /redis-5.0.3/src/redis-server /bin/
 COPY --from=server-builder /root/.local/bin/server /bin/
 
+EXPOSE 6379
 EXPOSE 8080
 
-ENTRYPOINT ["server"]
+ADD start-server.sh /bin/start-server.sh
+ENTRYPOINT ["start-server.sh"]
