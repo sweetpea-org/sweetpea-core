@@ -68,6 +68,8 @@ executable server
                      , process
                      , strict
                      , hedis
+                     , http-types
+                     , containers
   default-language:    Haskell2010
 
 test-suite unitTests

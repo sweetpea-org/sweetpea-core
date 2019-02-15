@@ -5,12 +5,14 @@ module Main where
 import Web.Spock
 import Web.Spock.Config
 
+import Control.Concurrent
+import Control.Monad
 import Control.Monad.IO.Class
 import GHC.Generics
 import Data.Aeson hiding (json)
 import Data.List
+import Data.Maybe
 import Data.Monoid
-import Data.Text (Text, pack, unpack, split, strip)
 import Data.UUID
 import Data.UUID.V4 as UUID
 
@@ -18,9 +20,15 @@ import System.Exit
 import System.IO
 import System.Directory
 import System.Process
-import qualified System.IO.Strict as S
 
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as B8
+import qualified Data.ByteString.Lazy.Char8 as BL8
+import qualified Data.Map as Map
+import qualified Data.Text as T
+import qualified System.IO.Strict as S
 import qualified Database.Redis as R
+import qualified Network.HTTP.Types.Status as Http
 
 import Parser
 import ServerHelpers
@@ -35,6 +43,15 @@ data ResponseSpec = ResponseSpec { ok :: Bool
                                  , stdout :: String
                                  , stderr :: String
                                  } deriving (Generic, Eq, Show, ToJSON, FromJSON)
+
+data JobStatus = InProgress
+               | Ready
+               deriving (Generic, Eq, Enum, Show, ToJSON, FromJSON)
+
+data JobResponseSpec = JobResponseSpec { id :: String
+                                       , status :: JobStatus
+                                       , result :: Maybe String
+                                       } deriving (Generic, Eq, Show, ToJSON, FromJSON)
 
 data ServerState = RedisAppState (R.Connection)
 
@@ -57,11 +74,14 @@ app =
   do get root $
        text "Healthy\n"
 
+     -- This is a helper endpoint to allow the frontend to just generate the CNF file,
+     -- without doing any solving/sampling, for inspection/troubleshooting.
      post "experiments/build-cnf" $ do
        spec <- jsonBody' :: ApiAction JSONSpec
-       let dimacsStr = processRequests spec
-       text $ pack dimacsStr
+       let dimacsStr = B8.pack $ processRequests spec
+       bytes dimacsStr
 
+     -- Synchronous endpoint for generating a CNF and invoking unigen.
      post "experiments/generate" $ do
        spec <- jsonBody' :: ApiAction JSONSpec
        guid <- liftIO $ toString <$> UUID.nextRandom
@@ -85,6 +105,8 @@ app =
            liftIO $ removeFile outputFilename
            json $ ResponseSpec True (extractSolutions solutionFileStr) (-1) "" ""
 
+     -- Synchronous endpoint for generating a CNF and repeatedly invoking a SAT solver to
+     -- compute some number of non-uniformly sampled solutions.
      post ("experiments/generate/non-uniform" <//> var) $ \count -> do
        spec <- jsonBody' :: ApiAction JSONSpec
        guild <- liftIO $ toString <$> UUID.nextRandom
@@ -96,32 +118,118 @@ app =
 
        json $ ResponseSpec True (map ((flip SolutionSpec) 1) solutions) (-1) "" ""
 
+     -- Submit a job for asynchronous processing
+     -- The type of job as well as any job-specific parameters are embedded in the 'job' field of the request body.
+     post "experiments/jobs" $ do
+       spec <- jsonBody' :: ApiAction JSONSpec
+       (RedisAppState redisConn) <- getState
 
-saveCnf :: String -> JSONSpec -> IO ()
+       -- Generate a UUID for this job
+       guid <- liftIO $ toString <$> UUID.nextRandom
+
+       -- Record it as started
+       liftIO $ R.runRedis redisConn $ do
+         R.hset (B8.pack guid) "submitted" "yes"
+         return ()
+
+       -- Spin up a thread that will:
+       -- * Execute the desired action
+       -- * Populate the redis cache when done, using the UUID as the key
+       liftIO $ forkIO (processJob spec redisConn guid)
+
+       -- Return the job id
+       json $ JobResponseSpec guid InProgress Nothing
+
+     -- Get the status of a previously submitted job.
+     get ("experiments/jobs" <//> var) $ \guidString -> do
+       (RedisAppState redisConn) <- getState
+       let guid = B8.pack guidString
+
+       submitted <- liftIO $ R.runRedis redisConn $ do
+         R.hget guid "submitted"
+
+       result <- liftIO $ R.runRedis redisConn $ do
+         R.hget guid "result"
+
+       case submitted of
+         Right (Just "yes") -> json $ buildJobResponse guid result
+         Right Nothing      -> setStatus Http.status404
+         Left reply         -> error (show reply)
+
+
+processJob :: JSONSpec -> R.Connection -> String -> IO ()
+processJob request redisConn guid = do
+  -- Extract the action type
+  let actionTypeValue = (actionType $ fromJust (action request))
+
+  -- Start computing the action
+  result <- liftIO $ case actionTypeValue of
+                       BuildCNF -> buildCnf request
+                       SampleNonUniform -> sampleNonUniform request guid
+
+  -- Save the result
+  R.runRedis redisConn $ do
+    R.hset (B8.pack guid) "result" (B8.pack result)
+    R.expire (B8.pack guid) 1800
+    return ()
+
+
+buildJobResponse :: B8.ByteString -> (Either R.Reply (Maybe B8.ByteString)) -> JobResponseSpec
+buildJobResponse guid (Right (Just value)) = JobResponseSpec (B8.unpack guid) Ready (Just (B8.unpack value))
+buildJobResponse guid (Right Nothing)      = JobResponseSpec (B8.unpack guid) InProgress Nothing
+buildJobResponse guid jobValue             = error (show jobValue)
+
+
+buildCnf :: JSONSpec -> IO String
+buildCnf request =
+  return (processRequests request)
+
+
+sampleNonUniform :: JSONSpec -> String -> IO String
+sampleNonUniform request guid = do
+  let filename = guid ++ ".cnf"
+  let actionParams = (parameters $ fromJust (action request)) :: Map.Map String String
+  let paramLookup = Map.lookup "count" actionParams
+  let count = read (fromJust paramLookup) :: Int
+
+  liftIO $ saveCnf filename request
+
+  solutions <- liftIO $ computeSolutions filename (support (unigen request)) count []
+  liftIO $ removeFile filename
+
+  return (BL8.unpack $ encode $ ResponseSpec True (map ((flip SolutionSpec) 1) solutions) (-1) "" "")
+
+
+saveCnf:: String -> JSONSpec -> IO ()
 saveCnf filename spec =
   let dimacsStr = processRequests spec
     in writeFile filename dimacsStr
+
 
 readSolutionFile :: String -> IO String
 readSolutionFile filename = do
   readFile filename
 
+
 extractSolutions :: String -> [SolutionSpec]
 extractSolutions solutionStr =
-  let lines = split (=='\n') (strip (pack solutionStr))
+  let lines = T.split (=='\n') (T.strip (T.pack solutionStr))
   in map buildSolution lines
 
-buildSolution :: Text -> SolutionSpec
+
+buildSolution :: T.Text -> SolutionSpec
 buildSolution sol = do
-  let intStrs = split (==' ') (pack [c | c <- unpack $ strip sol, not (c == 'v')])
+  let intStrs = T.split (==' ') (T.pack [c | c <- T.unpack $ T.strip sol, not (c == 'v')])
     in let assignment = map strToInt (take ((length intStrs) - 1) intStrs)
-           frequency = strToInt $ last $ split (==':') (last intStrs)
+           frequency = strToInt $ last $ T.split (==':') (last intStrs)
        in SolutionSpec assignment frequency
+
 
 extractCount :: String -> Int
 extractCount output =
-  let lines = split (=='\n') (strip (pack output))
+  let lines = T.split (=='\n') (T.strip (T.pack output))
   in strToInt $ lines !! 0
+
 
 computeSolutions :: String -> Int -> Int -> [[Int]] -> IO [[Int]]
 computeSolutions filename support count solutions = do
@@ -145,23 +253,24 @@ computeSolutions filename support count solutions = do
               -- Go for another round
               computeSolutions filename support (count - 1) (solutions ++ [solution])
 
+
 updateFile :: String -> [Int] -> IO ()
 updateFile filename solution = do
   -- Load the CNF file, split into lines
   -- Read strictly to ensure we can rewrite the file afterwards.
   contents <- liftIO $ S.readFile filename
-  let lines = split (=='\n') (strip (pack contents))
+  let lines = T.split (=='\n') (T.strip (T.pack contents))
 
   -- Update the clause count.
-  let updatedHeader = updateHeader (unpack (lines !! 0))
+  let updatedHeader = updateHeader (T.unpack (lines !! 0))
 
   -- Negate the given solution
   let negatedSolution = map (*(-1)) solution
   let negatedSolutionStr = unwords $ map show (negatedSolution ++ [0])
 
   -- Append it to the end of the CNF file, with a 0 at the end.
-  let updatedLines = [(pack updatedHeader)] ++ (drop 1 lines) ++ [(pack negatedSolutionStr)]
+  let updatedLines = [(T.pack updatedHeader)] ++ (drop 1 lines) ++ [(T.pack negatedSolutionStr)]
 
   -- Rewrite file to disk.
-  let updatedContents = (intercalate "\n" (map unpack updatedLines))
+  let updatedContents = (intercalate "\n" (map T.unpack updatedLines))
   writeFile filename updatedContents

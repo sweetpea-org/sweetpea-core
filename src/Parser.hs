@@ -1,3 +1,4 @@
+
 {-# LANGUAGE OverloadedStrings, DeriveGeneric, DeriveAnyClass #-}
 
 module Parser
@@ -5,6 +6,7 @@ module Parser
 where
 
 import Data.Aeson
+import qualified Data.Map as Map
 import GHC.Generics
 import Control.Monad.Trans.State
 import DataStructures
@@ -21,10 +23,19 @@ data UnigenOptions = UnigenOptions { support :: Int
                                    , arguments :: Maybe [String]
                                    } deriving (Generic, Eq, Show, ToJSON, FromJSON)
 
+data ActionType = BuildCNF
+                | SampleNonUniform
+                deriving (Generic, Eq, Enum, Show, ToJSON, FromJSON)
+
+data Action = Action { actionType :: ActionType
+                     , parameters :: Map.Map String String
+                     } deriving (Generic, Eq, Show, ToJSON, FromJSON)
+
 data JSONSpec = JSONSpec { fresh :: Int
                          , cnfs :: CNF
                          , requests :: [Request]
                          , unigen :: UnigenOptions
+                         , action :: Maybe Action
                          } deriving (Generic, Eq, Show, ToJSON, FromJSON)
 
 
