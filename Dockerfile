@@ -57,7 +57,7 @@ RUN wget http://download.redis.io/releases/redis-5.0.3.tar.gz && \
 # SERVER
 FROM haskell:8.2.2 as server-builder
 
-RUN git clone https://github.com/anniecherk/sweetpea-core && \
+RUN git clone https://github.com/sweetpea-org/sweetpea-core && \
     cd sweetpea-core && \
     git checkout 529f8fb6c5909e253e90dd9d156bb055ffbc707a && \
     stack install
