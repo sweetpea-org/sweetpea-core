@@ -17,7 +17,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     SweetPeaCore, DataStructures
                      , CodeGen, Testers, Parser, ServerHelpers
-  build-depends:       base >= 4.11 && < 5
+  build-depends:       base >= 4.7 && < 5
                      , tuple
                      , text
                      , bytestring
