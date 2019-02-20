@@ -6,6 +6,7 @@ module Parser
 where
 
 import Data.Aeson
+import Data.Maybe
 import qualified Data.Map as Map
 import GHC.Generics
 import Control.Monad.Trans.State
@@ -31,18 +32,18 @@ data Action = Action { actionType :: ActionType
                      , parameters :: Map.Map String String
                      } deriving (Generic, Eq, Show, ToJSON, FromJSON)
 
-data JSONSpec = JSONSpec { fresh :: Int
-                         , cnfs :: CNF
-                         , requests :: [Request]
-                         , unigen :: UnigenOptions
+data JSONSpec = JSONSpec { fresh :: Maybe Int
+                         , cnfs :: Maybe CNF
+                         , requests :: Maybe [Request]
+                         , unigen :: Maybe UnigenOptions
                          , action :: Maybe Action
                          } deriving (Generic, Eq, Show, ToJSON, FromJSON)
 
 
 processRequests :: JSONSpec -> String
-processRequests spec = showDIMACS finalCnf finalNVars (support (unigen spec))
-  where (finalNVars, finalCnf) = (finalNVars, cnf ++ (cnfs spec))
-          where (finalNVars, cnf) = execState (mapM processARequest (requests spec)) $ initState (fresh spec)
+processRequests spec = showDIMACS finalCnf finalNVars (support (fromJust (unigen spec)))
+  where (finalNVars, finalCnf) = (finalNVars, cnf ++ (fromJust (cnfs spec)))
+          where (finalNVars, cnf) = execState (mapM processARequest (fromJust (requests spec))) $ initState (fromJust (fresh spec))
 
 processARequest :: Request -> State (Count, CNF) ()
 processARequest (Request EQ k boolVals) = assertKofN    k boolVals

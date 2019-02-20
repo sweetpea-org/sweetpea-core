@@ -89,7 +89,7 @@ app =
        let outputFilename = guid ++ ".out"
        liftIO $ saveCnf filename spec
 
-       let args = case (arguments (unigen spec)) of
+       let args = case (arguments (fromJust (unigen spec))) of
              Nothing -> []
              Just argList -> argList
        (exitCode, stdout, stderr) <- liftIO $ readProcessWithExitCode "unigen" (args ++ [filename, outputFilename]) ""
@@ -113,7 +113,7 @@ app =
        let filename = guild ++ ".cnf"
        liftIO $ saveCnf filename spec
 
-       solutions <- liftIO $ computeSolutions filename (support (unigen spec)) count []
+       solutions <- liftIO $ computeSolutions filename (support (fromJust (unigen spec))) count []
        liftIO $ removeFile filename
 
        json $ ResponseSpec True (map ((flip SolutionSpec) 1) solutions) (-1) "" ""
@@ -194,7 +194,7 @@ sampleNonUniform request guid = do
 
   liftIO $ saveCnf filename request
 
-  solutions <- liftIO $ computeSolutions filename (support (unigen request)) count []
+  solutions <- liftIO $ computeSolutions filename (support (fromJust (unigen request))) count []
   liftIO $ removeFile filename
 
   return (BL8.unpack $ encode $ ResponseSpec True (map ((flip SolutionSpec) 1) solutions) (-1) "" "")
