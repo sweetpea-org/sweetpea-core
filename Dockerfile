@@ -59,7 +59,7 @@ FROM haskell:8.2.2 as server-builder
 
 RUN git clone https://github.com/sweetpea-org/sweetpea-core && \
     cd sweetpea-core && \
-    git checkout e25e20006a71dd9ae6cd448cb00bd6a398c69eb8 && \
+    git checkout 5439ba09ef7414caea2af4833c556884e1fd488b && \
     stack install
 
 # FINAL IMAGE
