@@ -26,14 +26,16 @@ data UnigenOptions = UnigenOptions { support :: Int
 
 data ActionType = BuildCNF
                 | SampleNonUniform
+                | IsSAT
                 deriving (Generic, Eq, Enum, Show, ToJSON, FromJSON)
 
 data Action = Action { actionType :: ActionType
-                     , parameters :: Map.Map String String
+                     , parameters :: Maybe (Map.Map String String)
                      } deriving (Generic, Eq, Show, ToJSON, FromJSON)
 
 data JSONSpec = JSONSpec { fresh :: Maybe Int
                          , cnfs :: Maybe CNF
+                         , cnfId :: Maybe String
                          , requests :: Maybe [Request]
                          , unigen :: Maybe UnigenOptions
                          , action :: Maybe Action

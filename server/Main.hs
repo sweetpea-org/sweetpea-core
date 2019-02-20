@@ -166,11 +166,12 @@ processJob request redisConn guid = do
   result <- liftIO $ case actionTypeValue of
                        BuildCNF -> buildCnf request
                        SampleNonUniform -> sampleNonUniform request guid
+                       IsSAT -> determineSAT redisConn request
 
   -- Save the result
   R.runRedis redisConn $ do
     R.hset (B8.pack guid) "result" (B8.pack result)
-    R.expire (B8.pack guid) 1800
+    R.expire (B8.pack guid) 86400
     return ()
 
 
@@ -178,6 +179,12 @@ buildJobResponse :: B8.ByteString -> (Either R.Reply (Maybe B8.ByteString)) -> J
 buildJobResponse guid (Right (Just value)) = JobResponseSpec (B8.unpack guid) Ready (Just (B8.unpack value))
 buildJobResponse guid (Right Nothing)      = JobResponseSpec (B8.unpack guid) InProgress Nothing
 buildJobResponse guid jobValue             = error (show jobValue)
+
+
+getRedisValue :: (Either R.Reply (Maybe B8.ByteString)) -> Maybe String
+getRedisValue (Right (Just value)) = Just (B8.unpack value)
+getRedisValue (Right Nothing)      = Nothing
+getRedisValue value                = error (show value)
 
 
 buildCnf :: JSONSpec -> IO String
@@ -188,7 +195,7 @@ buildCnf request =
 sampleNonUniform :: JSONSpec -> String -> IO String
 sampleNonUniform request guid = do
   let filename = guid ++ ".cnf"
-  let actionParams = (parameters $ fromJust (action request)) :: Map.Map String String
+  let actionParams = (fromJust (parameters $ fromJust (action request))) :: Map.Map String String
   let paramLookup = Map.lookup "count" actionParams
   let count = read (fromJust paramLookup) :: Int
 
@@ -198,6 +205,35 @@ sampleNonUniform request guid = do
   liftIO $ removeFile filename
 
   return (BL8.unpack $ encode $ ResponseSpec True (map ((flip SolutionSpec) 1) solutions) (-1) "" "")
+
+
+-- Given a request containing cnfs and a cnfId, this function will append the cnfs to the file referenced
+-- by cnfId in the cache, and then run cryptominisat to see if it is still SAT.
+determineSAT :: R.Connection -> JSONSpec -> IO String
+determineSAT redisConn request = do
+  let baseGuid = fromJust (cnfId request)
+  let cnfList  = fromJust (cnfs request)
+
+  -- Get the existing CNF from the cache
+  baseCnfResponse <- liftIO $ R.runRedis redisConn $ do
+    R.hget (B8.pack baseGuid) "result"
+  let baseCnf = fromJust (getRedisValue baseCnfResponse)
+
+  -- Append the new CNFs and update the clause count
+  let updatedCnf = addClausesToCnf baseCnf cnfList
+
+  -- Write the modified CNF to a new guid file
+  guid <- liftIO $ toString <$> UUID.nextRandom
+  let filename = guid ++ ".cnf"
+  liftIO $ writeFile filename updatedCnf
+
+  -- Run cryptominisat
+  (exitCode, stdout, stderr) <- liftIO $ readProcessWithExitCode "cryptominisat5" ["--verb=0", filename] ""
+
+  -- Cleanup the file
+  liftIO $ removeFile filename
+
+  return (show $ isFormulaSat stdout)
 
 
 saveCnf:: String -> JSONSpec -> IO ()
@@ -262,7 +298,7 @@ updateFile filename solution = do
   let lines = T.split (=='\n') (T.strip (T.pack contents))
 
   -- Update the clause count.
-  let updatedHeader = updateHeader (T.unpack (lines !! 0))
+  let updatedHeader = addClauseToHeader (T.unpack (lines !! 0))
 
   -- Negate the given solution
   let negatedSolution = map (*(-1)) solution
