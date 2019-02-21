@@ -59,9 +59,12 @@ data ServerState = RedisAppState (R.Connection)
 type Api = SpockM () () ServerState ()
 type ApiAction a = SpockAction () () ServerState a
 
+redisConnectInfo :: R.ConnectInfo
+redisConnectInfo = R.defaultConnectInfo {R.connectHost = "127.0.0.1"}
+
 serverCfg :: IO (SpockCfg () () ServerState)
 serverCfg = do
-    redisConn <- R.connect R.defaultConnectInfo
+    redisConn <- R.connect redisConnectInfo
     spockConfig <- defaultSpockCfg () PCNoDatabase (RedisAppState redisConn)
     return spockConfig { spc_maxRequestSize = Nothing } -- Disable the request size limit
 
