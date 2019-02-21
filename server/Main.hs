@@ -61,10 +61,7 @@ type ApiAction a = SpockAction () () ServerState a
 
 serverCfg :: IO (SpockCfg () () ServerState)
 serverCfg = do
-    liftIO $ putStrLn "Waiting for Redis server to start..."
-    liftIO $ threadDelay 5000000 -- 5,000,000 microseconds = 5 seconds
-
-    redisConn <- R.checkedConnect R.defaultConnectInfo
+    redisConn <- R.connect R.defaultConnectInfo
     spockConfig <- defaultSpockCfg () PCNoDatabase (RedisAppState redisConn)
     return spockConfig { spc_maxRequestSize = Nothing } -- Disable the request size limit
 
