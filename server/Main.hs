@@ -76,6 +76,7 @@ app =
 
      -- This is a helper endpoint to allow the frontend to just generate the CNF file,
      -- without doing any solving/sampling, for inspection/troubleshooting.
+     -- DEPRECATED: Submit a 'BuildCNF' job instead.
      post "experiments/build-cnf" $ do
        spec <- jsonBody' :: ApiAction JSONSpec
        let dimacsStr = B8.pack $ processRequests spec
@@ -89,7 +90,7 @@ app =
        let outputFilename = guid ++ ".out"
        liftIO $ saveCnf filename spec
 
-       let args = case (arguments (fromJust (unigen spec))) of
+       let args = case (unigenOptions spec) of
              Nothing -> []
              Just argList -> argList
        (exitCode, stdout, stderr) <- liftIO $ readProcessWithExitCode "unigen" (args ++ [filename, outputFilename]) ""
@@ -107,13 +108,14 @@ app =
 
      -- Synchronous endpoint for generating a CNF and repeatedly invoking a SAT solver to
      -- compute some number of non-uniformly sampled solutions.
+     -- DEPRECATED: Submit a 'SampleNonUniform' job instead.
      post ("experiments/generate/non-uniform" <//> var) $ \count -> do
        spec <- jsonBody' :: ApiAction JSONSpec
        guild <- liftIO $ toString <$> UUID.nextRandom
        let filename = guild ++ ".cnf"
        liftIO $ saveCnf filename spec
 
-       solutions <- liftIO $ computeSolutions filename (support (fromJust (unigen spec))) count []
+       solutions <- liftIO $ computeSolutions filename (fromJust (support spec)) count []
        liftIO $ removeFile filename
 
        json $ ResponseSpec True (map ((flip SolutionSpec) 1) solutions) (-1) "" ""
@@ -160,7 +162,7 @@ app =
 processJob :: JSONSpec -> R.Connection -> String -> IO ()
 processJob request redisConn guid = do
   -- Extract the action type
-  let actionTypeValue = (actionType $ fromJust (action request))
+  let actionTypeValue = fromJust (action request)
 
   -- Start computing the action
   result <- liftIO $ case actionTypeValue of
@@ -195,13 +197,11 @@ buildCnf request =
 sampleNonUniform :: JSONSpec -> String -> IO String
 sampleNonUniform request guid = do
   let filename = guid ++ ".cnf"
-  let actionParams = (fromJust (parameters $ fromJust (action request))) :: Map.Map String String
-  let paramLookup = Map.lookup "count" actionParams
-  let count = read (fromJust paramLookup) :: Int
+  let count = fromJust (sampleCount request)
 
   liftIO $ saveCnf filename request
 
-  solutions <- liftIO $ computeSolutions filename (support (fromJust (unigen request))) count []
+  solutions <- liftIO $ computeSolutions filename (fromJust (support request)) count []
   liftIO $ removeFile filename
 
   return (BL8.unpack $ encode $ ResponseSpec True (map ((flip SolutionSpec) 1) solutions) (-1) "" "")
