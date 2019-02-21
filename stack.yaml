@@ -50,6 +50,8 @@ extra-deps:
 - strict-0.3.2
 - hedis-0.11.0
 - http-types-0.12.2
+- wai-extra-3.0.25
+- streaming-commons-0.2.1.0
 
 # Override default flag values for local packages and extra-deps
 flags: {}

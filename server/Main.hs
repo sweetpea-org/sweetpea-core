@@ -4,6 +4,7 @@ module Main where
 
 import Web.Spock
 import Web.Spock.Config
+import Network.Wai.Middleware.RequestLogger
 
 import Control.Concurrent
 import Control.Monad
@@ -60,6 +61,9 @@ type ApiAction a = SpockAction () () ServerState a
 
 serverCfg :: IO (SpockCfg () () ServerState)
 serverCfg = do
+    liftIO $ putStrLn "Waiting for Redis server to start..."
+    liftIO $ threadDelay 5000000 -- 5,000,000 microseconds = 5 seconds
+
     redisConn <- R.checkedConnect R.defaultConnectInfo
     spockConfig <- defaultSpockCfg () PCNoDatabase (RedisAppState redisConn)
     return spockConfig { spc_maxRequestSize = Nothing } -- Disable the request size limit
@@ -67,7 +71,7 @@ serverCfg = do
 main :: IO ()
 main = do
   spockCfg <- serverCfg
-  runSpock 8080 (spock spockCfg app)
+  runSpock 8080 $ fmap (logStdoutDev.) $ (spock spockCfg app)
 
 app :: Api
 app =
