@@ -21,6 +21,7 @@ import System.Exit
 import System.IO
 import System.Directory
 import System.Process
+import System.Environment
 
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as B8
@@ -71,7 +72,10 @@ serverCfg = do
 main :: IO ()
 main = do
   spockCfg <- serverCfg
-  runSpock 8080 $ fmap (logStdoutDev.) $ (spock spockCfg app)
+  debugLogging <- liftIO $ lookupEnv "SWEETPEA_SERVER_DEBUG_LOGGING"
+  case debugLogging of
+    Just _ ->  runSpock 8080 $ fmap (logStdoutDev.) $ (spock spockCfg app)
+    Nothing -> runSpock 8080 $ (spock spockCfg app)
 
 app :: Api
 app =
