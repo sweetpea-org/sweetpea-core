@@ -1,38 +1,57 @@
-SweetPea is a language for declaratively specifying randomized experimental designs, and a runtime for synthesizing trial sequences generated from the design specification; this prototype that is targeted at psychology and neuroscience experiments. 
+SweetPea Core
+=============
 
-An experimental design is a description of experimental factors, relationships between factors, sequential constraints, and how to map those factors onto a sequence of trials. The reliability and validity of experimental results heavily relies on rigorous experimental design.
+The repository hosts the backend server code for the SweetPea language. If you want to use the language, you're probably be looking for the [python package][pypi] ([Source][pygit]). If you intend to contribute, read on. 
 
-SweetPea provides a high-level interface to declaratively describe an experimental design, and a low-level synthesizer to generate unbiased sequences of trials given satisfiable constraints. SweetPea samples sequences of trials by compiling experimental designs into Boolean logic, which are then passed to a SAT-sampler. The SAT-sampler [Unigen](https://bitbucket.org/kuldeepmeel/unigen) provides statistical guarantees that the solutions it finds are approximately uniformly probable in the space of all valid solutions. This means that while producing sequences of trials that are perfectly unbiased is intractable, we do the next best thing-- produce sequences that are approximately unbiased.
+## Overview
 
+This codebase builds a Haskell server with a few different responsibilities:
+* Constructing CNF formulas derived from a domain-specific definition.
+* Generating non-uniformly-distributed solutions to a CNF formula via [CryptoMiniSat][cmsat].
+* Generating approximately uniformly-distributed solutions to a CNF formula via [UniGen][ugen].
 
-#### Disclaimer!
+The server is not intended to be consumed directly by users; rather, the [frontend][pygit] relies on the server to perform the aforementioned tasks. Because UniGen requires Linux, and CryptoMiniSat must be built from source, we provide a [docker image][dimg] that contains all dependencies to facilitate consumption. The image embeds the server as well as its dependencies: CryptoMiniSat, UniGen, and Redis.
 
-This project is at an early stage, and likely to change: it isn't yet ready for real-world useage. Please don't rely on any of this code!
+Local development of the server does not _strictly_ require Linux, unless you want to use the endpoints that rely on UniGen or build a new docker image.
 
+The server supports an asynchronous API for requests that will take longer than a few seconds. Using these endpoints requires a Redis server to be running.
 
-## Useage info!
+## Building the Server
 
-Grab [stack](https://docs.haskellstack.org/en/stable/README/) if you don't already have it.
+1. Install a Haskell development environment. Ensure [`stack`][stack] is installed.
+2. Install dependencies with `stack install`.
+3. Build with `stack build`.
+4. Start the server with `stack exec server`. You should see a message indicating the server has been started:
 
-Grab the repo:
+```
+$ stack exec server
+Spock is running on port 8080
+```
 
-`git clone https://github.com/anniecherk/sweetpea`
+## Running Tests
 
-`cd sweetpea`
+Run Haskell unit tests with `stack test`.
 
-Let stack handle all the dependencies:
+Additional tests can be run from the `test` directory by executing individual bash scripts in that directory, though some of them seem to have been in a broken state since the beginning.
 
-`stack install`
+## API
 
-Build it:
+The server only presents a handful of endpoints:
 
-`stack build`
+* `GET /` - A healthcheck, responds with `200 OK` if the server is running.
+* `POST /experiments/build-cnf` - (DEPRECATED) Receives a JSON request body describing an experimental design and responds with a DIMACS CNF representation.
+* `POST /experiments/generate` - (DEPRECATED) Receives a JSON request body describing an experimental design and responds with samples generated via UniGen.
+* `POST /experiments/generate-non-uniform` - (DEPRECATED) Receives a JSON request body describing an experimental design and responds with samples generated via CryptoMiniSat.
+* `POST /experiments/jobs` - Asynchronous - Receives a JSON request body describing an experimental design and the type of job to execute. (To build a CNF, to generate non-uniform samples, to generate uniform samples) Responds with a job id.
+* `GET /experiments/jobs/<job id>` - Asynchronous - Receives a job id in the request URI, and responds with a status object describing the status of the requested job. The status object indicates whether or not the job is complete, as well as its result if complete.
 
-## Run an example
+The deprecated endpoints are synchronous. The asynchronous endpoints are preferred due to the long-lived nature of these tasks for larger designs.
 
-`./run_example.sh`
+TODO: Document the structure of the request/response objects for each endpoint. (For now, contributors will need to read the code in either the frontend or the server)
 
-This will run the small example Stroop experiment in app/ExperimentToRun.hs, and print the generated sequence of trials to the console. 
-
-Note: you currently need to install crytominisat- this project plans to eventually rely upon Unigen, but currently uses cryptominisat, which is the solver Unigen uses. You can install it [here](https://github.com/msoos/cryptominisat).
-
+[pypi]: https://pypi.org/project/sweetpea/
+[pygit]: https://github.com/sweetpea-org/sweetpea-py
+[cmsat]: https://github.com/msoos/cryptominisat
+[ugen]: https://bitbucket.org/kuldeepmeel/unigen
+[dimg]: https://hub.docker.com/r/sweetpea/server
+[stack]: https://docs.haskellstack.org/en/stable/README/

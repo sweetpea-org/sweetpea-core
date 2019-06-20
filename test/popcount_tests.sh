@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 
 RED='\033[0;31m'
 NC='\033[0m' # No Color
@@ -16,7 +17,7 @@ run_fileoutput_tests(){
   do
       if [ ! -e $file ]; then
           echo "No test found matching generated_tests/$base*.cnf"
-          exit 1†s
+          exit 1;
       fi
 
       file=${file%.*}
@@ -44,7 +45,7 @@ run_adder_tests(){
   do
       if [ ! -e $file ]; then
           echo "No test found matching generated_tests/$base*.cnf"
-          exit 1†s
+          exit 1
       fi
 
       file=${file%.*}
